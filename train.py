@@ -23,9 +23,7 @@ def train(model, optimizer, dataloaders, epochs, plot=False):
         print('-'*70)
         
         train_loss, train_acc = 0,0
-        train_correct, train_total = 0,0
         val_loss, val_acc = 0,0 
-        val_correct, val_total = 0,0
         
         for phase in ['train', 'validation']:
             if phase == 'train':
@@ -38,19 +36,20 @@ def train(model, optimizer, dataloaders, epochs, plot=False):
                 model.eval()
                 
             running_loss = 0
+            total, correct = 0,0
 
             for step, data in enumerate(dataloaders[phase]):
                 if phase == 'train':
                     optimizer.zero_grad()
                     inputs, labels = data['pointcloud'].to(device).float(), data['category'].to(device)
                     outputs, m3x3, m64x64 = model(inputs.transpose(1,2))
+                    n_points = outputs.size()[1]
                     loss = pointnetloss(outputs.transpose(1,2), labels.unsqueeze(1).repeat(1,n_points), m3x3, m64x64)
                     
                     loss.backward()
                     optimizer.step()
                     
                     running_loss += loss.item() 
-                    n_points = outputs.size()[1]
                     _, predicted = torch.max(outputs.transpose(1,2).data, 1)
                     total += labels.size(0) * n_points 
                     correct += (predicted == labels.unsqueeze(1).repeat(1,n_points)).sum().item()
@@ -62,10 +61,10 @@ def train(model, optimizer, dataloaders, epochs, plot=False):
                     with torch.no_grad(): 
                         inputs, labels = data['pointcloud'].to(device).float(), data['category'].to(device)
                         outputs, m3x3, m64x64 = model(inputs.transpose(1,2))
+                        n_points = outputs.size()[1]
                         loss = pointnetloss(outputs.transpose(1,2), labels.unsqueeze(1).repeat(1,n_points), m3x3, m64x64)
 
                         running_loss += loss.item()
-                        n_points = outputs.size()[1]
                         _, predicted = torch.max(outputs.transpose(1,2).data, 1)
                         total += labels.size(0) * n_points 
                         correct += (predicted == labels.unsqueeze(1).repeat(1,n_points)).sum().item()
@@ -75,7 +74,7 @@ def train(model, optimizer, dataloaders, epochs, plot=False):
         
             # calculate average loss/accuracy
             if phase == 'train':
-                train_acc = 100. * train_correct / train_total
+                train_acc = 100. * correct / total
                 train_loss = running_loss/len(dataloaders[phase])
 
                 train_losses.append(train_loss)
@@ -87,7 +86,7 @@ def train(model, optimizer, dataloaders, epochs, plot=False):
                 print('  Elapsed Time : {}'.format(t_end-t_start))
                 
             else: 
-                val_acc = 100. * val_correct / val_total
+                val_acc = 100. * correct / total
                 val_loss = running_loss/len(dataloaders[phase])
 
                 valid_losses.append(val_loss)
@@ -128,7 +127,7 @@ if __name__ == "__main__":
     # customized datasets/dataloaders 
     train_dataset = PointCloudDataset(path, folder="train", transform=default_transforms(), data_augmentation=True)
     valid_dataset = PointCloudDataset(path, folder="train", transform=default_transforms(), data_augmentation=False)
-    datasets = {"train" : train_dataset, "valid" : valid_dataset}
+    datasets = {"train" : train_dataset, "validation" : valid_dataset}
     dataloaders = {x : torch.utils.data.DataLoader(datasets[x], batch_size=32, shuffle=True) for x in ['train', 'validation']}
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
